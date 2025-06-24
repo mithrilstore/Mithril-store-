@@ -46,53 +46,6 @@
     .order-summary-item { display: flex; justify-content: space-between; margin-bottom: 5px; }
     .order-summary-total { font-weight: bold; border-top: 1px solid #ddd; padding-top: 10px; margin-top: 10px; }
     .checkout-nav { display: flex; justify-content: space-between; margin-top: 20px; }
-<head>
-  <style>
-    /* Admin Dashboard Styles */
-    #orderFilters {
-      display: flex;
-      gap: 10px;
-      margin-bottom: 20px;
-      flex-wrap: wrap;
-    }
-
-    #orderFilters button {
-      padding: 8px 12px;
-      background: #f0f0f0;
-      border: 1px solid #ddd;
-      border-radius: 4px;
-      cursor: pointer;
-    }
-
-    #orderFilters button:hover {
-      background: #e0e0e0;
-    }
-
-    .order-item {
-      transition: all 0.3s ease;
-      border: 1px solid #ddd;
-      padding: 15px;
-      margin-bottom: 15px;
-      border-radius: 5px;
-      background: #fff;
-    }
-
-    .order-item:hover {
-      box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-    }
-
-    .order-actions {
-      display: flex;
-      gap: 10px;
-      margin-top: 15px;
-    }
-
-    .order-actions .btn {
-      padding: 6px 12px;
-      font-size: 14px;
-    }
-  </style>
-</head>
   </style>
 </head>
 <body>
@@ -113,8 +66,7 @@
     <span id="userEmail"></span>
     <button class="btn" onclick="showLogin()" id="loginBtn">Login</button>
     <button class="btn" onclick="showProfile()" id="profileBtn" style="display:none;">Profile</button>
-    <button class="btn" onclick="showAdminDashboard()" id="adminBtn" style="display:none;">Admin</button>
- </div>
+  </div>
 </nav>
 
 <div class="hero">Welcome to Mithril Store</div>
@@ -345,19 +297,6 @@ function placeOrder() {
 }
 
 </script>
-
-<!-- Admin Dashboard Modal -->
-<div id="adminModal" style="display:none; position:fixed; top:10%; left:50%; transform:translateX(-50%); background:#fff; padding:20px; max-width:800px; width:90%; box-shadow:0 0 10px rgba(0,0,0,0.3); border-radius:10px; z-index:999; max-height:80vh; overflow-y:auto;">
-  <h3>Admin Dashboard</h3>
-  <div id="orderFilters">
-    <button onclick="loadOrders('all')">All Orders</button>
-    <button onclick="loadOrders('confirmed')">COD Orders</button>
-    <button onclick="loadOrders('paid')">Paid Orders</button>
-    <button onclick="loadOrders('shipped')">Shipped</button>
-  </div>
-  <div id="ordersList" style="margin-top:20px;"></div>
-  <button class="btn" onclick="closeModal('adminModal')">Close</button>
-</div>
 
 <!-- Login Modal -->
 <div id="loginModal">
@@ -813,39 +752,28 @@ function placeOrder() {
       alert("Failed to place order. Please try again.");
     });
 }
-
+// Add this new function for COD orders
 function completeCODOrder() {
   currentOrder.payment = {
     method: 'cod',
-    status: 'confirmed' // Auto-confirm COD orders
+    status: 'pending' // or 'confirmed' based on your workflow
   };
-  currentOrder.orderStatus = 'confirmed'; // New status field
   currentOrder.userId = auth.currentUser.uid;
   currentOrder.userEmail = auth.currentUser.email || '';
-  currentOrder.timestamps = {
-    createdAt: firebase.firestore.FieldValue.serverTimestamp(),
-    confirmedAt: firebase.firestore.FieldValue.serverTimestamp()
-  };
 
+  // Show processing modal
   showModal('paymentProcessingModal');
 
+  // Save COD order to Firestore
   db.collection('orders').add(currentOrder)
     .then(docRef => {
-      // Send confirmation
-      sendOrderConfirmation(docRef.id, currentOrder);
-      
+      // Clear cart
       localStorage.removeItem('cart');
       updateCartCount();
       
+      // Show success modal
       closeModal('paymentProcessingModal');
       document.getElementById('orderIdDisplay').textContent = docRef.id;
-      
-      // Custom COD success message
-      document.querySelector('#orderSuccessModal p').innerHTML = `
-        Thank you for your order!<br>
-        Your COD order #${docRef.id} has been confirmed.<br>
-        Our delivery agent will contact you shortly.`;
-      
       showModal('orderSuccessModal');
     })
     .catch(error => {
@@ -1000,84 +928,6 @@ function logout() {
       alert("Logout failed: " + error.message);
     });
 }
-// Admin Dashboard Functions
-function showAdminDashboard() {
-  showModal('adminModal');
-  loadOrders();
-}
-
-function loadOrders(filter = 'all') {
-  let query = db.collection('orders');
-  
-  if (filter === 'confirmed') {
-    query = query.where('payment.method', '==', 'cod');
-  } else if (filter === 'paid') {
-    query = query.where('payment.method', '!=', 'cod');
-  } else if (filter === 'shipped') {
-    query = query.where('orderStatus', '==', 'shipped');
-  }
-
-  query.orderBy('timestamps.createdAt', 'desc').get()
-    .then(snapshot => {
-      const ordersList = document.getElementById('ordersList');
-      ordersList.innerHTML = '';
-      
-      if (snapshot.empty) {
-        ordersList.innerHTML = '<p>No orders found</p>';
-        return;
-      }
-
-      snapshot.forEach(doc => {
-        const order = doc.data();
-        const orderDiv = document.createElement('div');
-        orderDiv.className = 'order-item';
-        orderDiv.style.border = '1px solid #ddd';
-        orderDiv.style.padding = '10px';
-        orderDiv.style.marginBottom = '10px';
-        orderDiv.style.borderRadius = '5px';
-        
-        orderDiv.innerHTML = `
-          <h4>Order #${doc.id}</h4>
-          <p><strong>Status:</strong> ${order.orderStatus || 'processing'}</p>
-          <p><strong>Payment:</strong> ${order.payment.method.toUpperCase()} (${order.payment.status})</p>
-          <p><strong>Total:</strong> ₹${order.total.toFixed(2)}</p>
-          <p><strong>Date:</strong> ${new Date(order.timestamps.createdAt?.toDate()).toLocaleString()}</p>
-          <div class="order-actions">
-            ${order.payment.method === 'cod' && order.orderStatus !== 'shipped' ? `
-              <button class="btn" onclick="updateOrderStatus('${doc.id}', 'shipped')">Mark as Shipped</button>
-            ` : ''}
-            <button class="btn" onclick="viewOrderDetails('${doc.id}')">View Details</button>
-          </div>
-        `;
-        ordersList.appendChild(orderDiv);
-      });
-    })
-    .catch(error => {
-      console.error("Error loading orders:", error);
-      alert("Error loading orders");
-    });
-}
-
-function updateOrderStatus(orderId, status) {
-  db.collection('orders').doc(orderId).update({
-    orderStatus: status,
-    [`timestamps.${status}At`]: firebase.firestore.FieldValue.serverTimestamp()
-  })
-  .then(() => {
-    alert(`Order ${orderId} marked as ${status}`);
-    loadOrders();
-  })
-  .catch(error => {
-    console.error("Error updating order:", error);
-    alert("Error updating order status");
-  });
-}
-
-function viewOrderDetails(orderId) {
-  // You can implement detailed order view here
-  alert(`Viewing details for order ${orderId}`);
-  // In a real app, you might show another modal with full order details
-}
 
 // Modal Functions
 function showModal(modalId) {
@@ -1126,18 +976,6 @@ auth.onAuthStateChanged(user => {
     userEmail.textContent = '';
     loginBtn.style.display = 'inline-block';
     profileBtn.style.display = 'none';
-  }
-
-checkIfAdmin(user.uid).then(isAdmin => {
-      adminBtn.style.display = isAdmin ? 'inline-block' : 'none';
-    });
-    
-    loadProfile();
-  } else {
-    userEmail.textContent = '';
-    loginBtn.style.display = 'inline-block';
-    profileBtn.style.display = 'none';
-    adminBtn.style.display = 'none';
   }
   
   updateCartCount();
