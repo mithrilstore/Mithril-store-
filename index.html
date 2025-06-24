@@ -355,6 +355,22 @@ firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
+// ===== ADD THE HELPER FUNCTION HERE =====
+function updateUserProfile(user) {
+  const profileData = {
+    name: user.displayName || '',
+    email: user.email || '',
+    photoURL: user.photoURL || '',
+    phoneNumber: user.phoneNumber || '',
+    lastLogin: firebase.firestore.FieldValue.serverTimestamp()
+  };
+
+  db.collection('users').doc(user.uid).set(profileData, { merge: true })
+    .catch(error => {
+      console.error('Error updating profile:', error);
+    });
+}
+
 // App state variables
 let currentPage = 1;
 const pageSize = 8;
@@ -770,79 +786,124 @@ function closeLogin() {
   document.getElementById('loginPassword').value = '';
 }
 
+// Replace these existing functions:
 function showPhoneLogin() {
   closeLogin();
   showModal('phoneModal');
   
-  if (!recaptchaVerifier) {
-    recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
-      size: 'normal',
-      callback: () => {},
-      'expired-callback': () => {}
-    });
-    recaptchaVerifier.render().catch(error => {
-      console.error('reCAPTCHA error:', error);
-    });
+  // Reset recaptcha if exists
+  if (recaptchaVerifier) {
+    recaptchaVerifier.clear();
   }
-}
-
-function closePhoneLogin() {
-  closeModal('phoneModal');
-  document.getElementById('phoneNumber').value = '';
-  document.getElementById('otpInput').value = '';
-  document.getElementById('otpSection').style.display = 'none';
+  
+  recaptchaVerifier = new firebase.auth.RecaptchaVerifier('recaptcha-container', {
+    size: 'invisible',
+    callback: (response) => {
+      sendOTP();
+    }
+  });
+  
+  recaptchaVerifier.render().catch(error => {
+    console.error('reCAPTCHA render error:', error);
+    alert('Could not initialize reCAPTCHA. Please refresh the page.');
+  });
 }
 
 function sendOTP() {
   const phoneNumber = document.getElementById('phoneNumber').value;
   if (!phoneNumber) {
-    alert('Please enter a valid phone number');
+    alert('Please enter a valid phone number with country code (e.g., +919876543210)');
     return;
   }
 
-  auth.signInWithPhoneNumber(phoneNumber, recaptchaVerifier)
+  if (!phoneNumber.startsWith('+')) {
+    alert('Please include country code (e.g., +91 for India)');
+    return;
+  }
+
+  const appVerifier = recaptchaVerifier;
+  
+  auth.signInWithPhoneNumber(phoneNumber, appVerifier)
     .then(result => {
       confirmationResult = result;
       document.getElementById('otpSection').style.display = 'block';
-      alert('OTP sent successfully!');
+      alert('OTP sent successfully! Check your SMS messages.');
     })
     .catch(error => {
       console.error('Error sending OTP:', error);
-      alert('Error sending OTP: ' + error.message);
+      if (error.code === 'auth/invalid-phone-number') {
+        alert('Invalid phone number format. Please use format like +919876543210');
+      } else if (error.code === 'auth/quota-exceeded') {
+        alert('Too many attempts. Please try again later.');
+      } else {
+        alert('Error sending OTP: ' + error.message);
+      }
+      
+      if (recaptchaVerifier) {
+        recaptchaVerifier.clear();
+        recaptchaVerifier.render().catch(renderError => {
+          console.error('Recaptcha render error:', renderError);
+        });
+      }
     });
 }
 
 function verifyOTP() {
   const otp = document.getElementById('otpInput').value;
-  if (!otp) {
-    alert('Please enter the OTP');
+  if (!otp || otp.length !== 6) {
+    alert('Please enter the 6-digit OTP sent to your phone');
     return;
   }
 
   confirmationResult.confirm(otp)
-    .then(() => {
+    .then((result) => {
+      const user = result.user;
       alert('Phone authentication successful!');
       closePhoneLogin();
+      updateUserProfile(user);
     })
     .catch(error => {
       console.error('Error verifying OTP:', error);
-      alert('Error verifying OTP: ' + error.message);
+      if (error.code === 'auth/invalid-verification-code') {
+        alert('Invalid OTP. Please enter the correct code.');
+      } else {
+        alert('Error verifying OTP: ' + error.message);
+      }
     });
 }
 
+// Replace this existing function:
 function googleLogin() {
+  closeAllModals();
+  
   const provider = new firebase.auth.GoogleAuthProvider();
+  provider.addScope('profile');
+  provider.addScope('email');
+  provider.setCustomParameters({
+    prompt: 'select_account'
+  });
+
   auth.signInWithPopup(provider)
-    .then(() => {
+    .then((result) => {
+      const credential = result.credential;
+      const token = credential.accessToken;
+      const user = result.user;
       alert("Google login successful!");
-      closeLogin();
+      updateUserProfile(user);
     })
     .catch(error => {
       console.error('Google login error:', error);
-      alert("Google login failed: " + error.message);
+      if (error.code === 'auth/popup-blocked') {
+        alert('Popup blocked by browser. Please allow popups for this site.');
+      } else if (error.code === 'auth/popup-closed-by-user') {
+        alert('Login popup was closed before completing.');
+      } else if (error.code === 'auth/unauthorized-domain') {
+        alert('This domain is not authorized for login. Contact support.');
+      } else {
+        alert("Google login failed: " + error.message);
+      }
     });
 }
-
 function loginUser() {
   const email = document.getElementById('loginEmail').value;
   const password = document.getElementById('loginPassword').value;
