@@ -752,6 +752,36 @@ function placeOrder() {
       alert("Failed to place order. Please try again.");
     });
 }
+// Add this new function for COD orders
+function completeCODOrder() {
+  currentOrder.payment = {
+    method: 'cod',
+    status: 'pending' // or 'confirmed' based on your workflow
+  };
+  currentOrder.userId = auth.currentUser.uid;
+  currentOrder.userEmail = auth.currentUser.email || '';
+
+  // Show processing modal
+  showModal('paymentProcessingModal');
+
+  // Save COD order to Firestore
+  db.collection('orders').add(currentOrder)
+    .then(docRef => {
+      // Clear cart
+      localStorage.removeItem('cart');
+      updateCartCount();
+      
+      // Show success modal
+      closeModal('paymentProcessingModal');
+      document.getElementById('orderIdDisplay').textContent = docRef.id;
+      showModal('orderSuccessModal');
+    })
+    .catch(error => {
+      console.error("Error placing COD order:", error);
+      closeModal('paymentProcessingModal');
+      alert("Failed to place COD order. Please try again.");
+    });
+}
 
 function closeOrderSuccess() {
   closeModal('orderSuccessModal');
