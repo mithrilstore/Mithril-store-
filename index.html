@@ -33,7 +33,7 @@
       width: 100%; padding: 8px; margin-bottom: 10px; border: 1px solid #ddd; border-radius: 4px;
     }
     .login-options { display: flex; flex-direction: column; gap: 10px; margin-top: 15px; }
-        .login-option-btn.google { background: #4285F4; }
+    .login-option-btn.google { background: #4285F4; }
     .login-option-btn.phone { background: #34A853; }
     .login-option-btn img { width: 20px; height: 20px; }
     .modal-backdrop { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 998; }
@@ -46,6 +46,24 @@
     .order-summary-item { display: flex; justify-content: space-between; margin-bottom: 5px; }
     .order-summary-total { font-weight: bold; border-top: 1px solid #ddd; padding-top: 10px; margin-top: 10px; }
     .checkout-nav { display: flex; justify-content: space-between; margin-top: 20px; }
+    .upi-payment-box { 
+      text-align: center; 
+      margin: 15px 0; 
+      padding: 15px; 
+      background: #f5f5f5; 
+      border-radius: 8px;
+      border: 1px dashed #ff5722;
+    }
+    .upi-id-display {
+      font-size: 1.3em;
+      font-weight: bold;
+      color: #ff5722;
+      margin: 10px 0;
+      padding: 8px;
+      background: white;
+      border-radius: 4px;
+    }
+    @keyframes spin { 0% { transform:rotate(0deg); } 100% { transform:rotate(360deg); } }
   </style>
 </head>
 <body>
@@ -66,6 +84,8 @@
     <span id="userEmail"></span>
     <button class="btn" onclick="showLogin()" id="loginBtn">Login</button>
     <button class="btn" onclick="showProfile()" id="profileBtn" style="display:none;">Profile</button>
+    <button id="myOrdersBtn" style="display:none;" class="btn">My Orders</button>
+    <a href="my-orders.html" class="btn">My Orders</a>
   </div>
 </nav>
 
@@ -82,6 +102,30 @@
 </section>
 
 <div class="footer">&copy; 2025 Mithril Store</div>
+
+<!-- Login Modal -->
+<div id="loginModal">
+  <h3>Login / Sign Up</h3>
+  <input type="email" id="loginEmail" placeholder="Email">
+  <input type="password" id="loginPassword" placeholder="Password">
+  
+  <div style="display: flex; gap: 10px; margin-top: 15px;">
+    <button class="btn" onclick="loginUser()">Login</button>
+    <button class="btn btn-secondary" onclick="signupUser()">Sign Up</button>
+    <button class="btn" onclick="closeLogin()">Close</button>
+  </div>
+  
+  <p style="text-align: center; margin-top: 10px;">
+    <a href="javascript:void(0)" onclick="resetPassword()" style="color: #ff5722;">Forgot Password?</a>
+  </p>
+  
+  <div class="login-options">
+    <p style="text-align: center; margin: 15px 0;">Or login with:</p>
+    <button class="btn login-option-btn google" onclick="googleLogin()">
+      <img src="https://www.google.com/favicon.ico" alt="Google"> Google
+    </button>
+  </div>
+</div>
 
 <!-- Profile Modal -->
 <div id="profileModal">
@@ -155,7 +199,15 @@
   </div>
   
   <div id="upiDetails" class="payment-details">
-    <input type="text" id="upiId" placeholder="Enter UPI ID (e.g., name@upi)">
+    <div class="upi-payment-box">
+      <p>Please send payment to our merchant UPI ID:</p>
+      <div class="upi-id-display">620352117@mbk</div>
+      <p>After payment, please enter your transaction reference below:</p>
+      <input type="text" id="upiReference" placeholder="Enter UPI Transaction Reference" required>
+      <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+        Note: Your order will be processed only after payment verification
+      </p>
+    </div>
   </div>
   
   <div id="cardDetails" class="payment-details" style="display:none;">
@@ -182,7 +234,7 @@
   <button class="btn" onclick="closeOrderSuccess()">Continue Shopping</button>
 </div>
 
-<!-- Add just this modal after orderSuccessModal -->
+<!-- Payment Processing Modal -->
 <div id="paymentProcessingModal" style="display:none; position:fixed; top:10%; left:50%; transform:translateX(-50%); background:#fff; padding:20px; max-width:500px; width:90%; box-shadow:0 0 10px rgba(0,0,0,0.3); border-radius:10px; z-index:999; text-align:center;">
   <h3>Processing Payment</h3>
   <div id="paymentLoader">
@@ -191,134 +243,8 @@
   </div>
 </div>
 
-<style>
-@keyframes spin { 0% { transform:rotate(0deg); } 100% { transform:rotate(360deg); } }
-</style>
-
-<script>
-function placeOrder() {
-  const user = auth.currentUser;
-  if (!user) {
-    alert("Please log in to place an order.");
-    showLogin();
-    return;
-  }
-
-  // Get selected payment method (optional for now)
-  const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked')?.value || "razorpay";
-
-  // Get shipping inputs
-  const name = document.getElementById('shipName').value.trim();
-  const address = document.getElementById('shipAddress').value.trim();
-  const city = document.getElementById('shipCity').value.trim();
-  const pincode = document.getElementById('shipPincode').value.trim();
-  const phone = document.getElementById('shipPhone').value.trim();
-
-  if (!name || !address || !city || !pincode || !phone) {
-    alert("Please fill all shipping fields.");
-    return;
-  }
-
-  const cart = JSON.parse(localStorage.getItem('cart') || '[]');
-  const total = cart.reduce((sum, item) => sum + item.price * item.qty, 0);
-
-  const orderData = {
-    userId: user.uid,
-    userEmail: user.email || '',
-    items: cart,
-    total: total,
-    shipping: { name, address, city, pincode, phone },
-    payment: {
-      method: paymentMethod,
-      status: "initiated"
-    },
-    timestamp: firebase.firestore.FieldValue.serverTimestamp(),
-    status: "pending"
-  };
-
-  // Show processing modal
-  showModal('paymentProcessingModal');
-
-  // Save order before payment
-  db.collection('orders').add(orderData)
-    .then(docRef => {
-      const options = {
-        key: "YOUR_RAZORPAY_KEY_ID", // Replace this
-        amount: total * 100,
-        currency: "INR",
-        name: "Mithril Store",
-        description: "Order Payment",
-        image: "https://via.placeholder.com/100x50?text=Mithril+Store",
-        handler: function (response) {
-          // Payment successful
-          db.collection('orders').doc(docRef.id).update({
-            payment: {
-              method: paymentMethod,
-              status: "paid",
-              paymentId: response.razorpay_payment_id
-            },
-            status: "paid"
-          }).then(() => {
-            localStorage.removeItem('cart');
-            updateCartCount();
-            closeModal('paymentProcessingModal');
-            document.getElementById('orderIdDisplay').textContent = docRef.id;
-            showModal('orderSuccessModal');
-          });
-        },
-        prefill: {
-          name: name,
-          email: user.email || "",
-          contact: phone
-        },
-        notes: {
-          orderId: docRef.id
-        },
-        theme: {
-          color: "#ff5722"
-        }
-      };
-
-      const rzp = new Razorpay(options);
-      rzp.open();
-
-      // If payment modal is closed without completing
-      rzp.on('payment.failed', function (response) {
-        closeModal('paymentProcessingModal');
-        alert("Payment failed: " + response.error.description);
-      });
-
-    })
-    .catch(error => {
-      closeModal('paymentProcessingModal');
-      console.error("Order error:", error);
-      alert("Could not place order. Try again.");
-    });
-}
-
-</script>
-
-<!-- Login Modal -->
-<div id="loginModal">
-  <h3>Login / Signup</h3>
-  <input type="email" id="loginEmail" placeholder="Email" />
-  <input type="password" id="loginPassword" placeholder="Password" />
-  <button class="btn" onclick="loginUser()">Login</button>
-  <button class="btn" onclick="signupUser()">Signup</button>
-  
-  <div class="login-options">
-    <p style="text-align: center; margin: 10px 0;">Or login with:</p>
-    <button class="login-option-btn google" onclick="googleLogin()">
-      <img src="https://upload.wikimedia.org/wikipedia/commons/5/53/Google_%22G%22_Logo.svg" alt="Google">
-      Continue with Google
-    </button>
-      </div>
-  
-  <button class="btn" onclick="closeLogin()">Close</button>
-</div>
-
-
-<div class="modal-backdrop" id="modalBackdrop" onclick="closeAllModals()"></div>
+<!-- Modal Backdrop -->
+<div class="modal-backdrop" id="modalBackdrop"></div>
 
 <script>
 // Firebase configuration
@@ -332,12 +258,14 @@ const firebaseConfig = {
   measurementId: "G-7Z9M1V31EF"
 };
 
+// Merchant UPI ID
+const MERCHANT_UPI_ID = "620352117@mbk";
+
 // Initialize Firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.firestore();
 const auth = firebase.auth();
 
-// ===== ADD THE HELPER FUNCTION HERE =====
 function updateUserProfile(user) {
   const profileData = {
     name: user.displayName || '',
@@ -375,6 +303,13 @@ window.addEventListener('DOMContentLoaded', () => {
       document.getElementById('cardDetails').style.display = 
         this.value === 'card' ? 'block' : 'none';
     });
+  });
+  
+  // Allow login with Enter key
+  document.getElementById('loginPassword').addEventListener('keypress', function(e) {
+    if (e.key === 'Enter') {
+      loginUser();
+    }
   });
 });
 
@@ -594,7 +529,6 @@ function checkout() {
 
 // Checkout Functions
 function showCheckout() {
-  // Initialize checkout form with profile data if available
   const user = auth.currentUser;
   if (user) {
     db.collection('users').doc(user.uid).get().then(doc => {
@@ -617,7 +551,6 @@ function closeCheckout() {
 }
 
 function proceedToPayment() {
-  // Validate address form
   const requiredFields = ['fullName', 'addressLine1', 'city', 'state', 'pincode', 'mobileNumber'];
   let isValid = true;
   
@@ -636,7 +569,6 @@ function proceedToPayment() {
     return;
   }
   
-  // Prepare order data
   const cart = JSON.parse(localStorage.getItem('cart') || '[]');
   const total = cart.reduce((sum, item) => sum + (item.price * item.qty), 0);
   
@@ -656,13 +588,11 @@ function proceedToPayment() {
     createdAt: firebase.firestore.FieldValue.serverTimestamp()
   };
   
-  // Show payment modal
   closeModal('checkoutModal');
   showPaymentModal();
 }
 
 function showPaymentModal() {
-  // Update order summary
   const summaryContainer = document.getElementById('paymentOrderSummary');
   summaryContainer.innerHTML = '';
   
@@ -677,6 +607,20 @@ function showPaymentModal() {
   });
   
   document.getElementById('paymentTotal').textContent = currentOrder.total.toFixed(2);
+  
+  const upiDetails = document.getElementById('upiDetails');
+  upiDetails.innerHTML = `
+    <div class="upi-payment-box">
+      <p>Please send payment to our merchant UPI ID:</p>
+      <div class="upi-id-display">${MERCHANT_UPI_ID}</div>
+      <p>After payment, please enter your transaction reference below:</p>
+      <input type="text" id="upiReference" placeholder="Enter UPI Transaction Reference" required>
+      <p style="font-size: 0.9em; color: #666; margin-top: 10px;">
+        Note: Your order will be processed only after payment verification
+      </p>
+    </div>
+  `;
+  
   showModal('paymentModal');
 }
 
@@ -693,19 +637,19 @@ function placeOrder() {
     return;
   }
   
-  // Get payment method
   const paymentMethod = document.querySelector('input[name="paymentMethod"]:checked').value;
   let paymentDetails = {};
   
   if (paymentMethod === 'upi') {
-    const upiId = document.getElementById('upiId').value;
-    if (!upiId) {
-      alert('Please enter your UPI ID');
+    const upiReference = document.getElementById('upiReference').value;
+    if (!upiReference) {
+      alert('Please enter your UPI transaction reference');
       return;
     }
     paymentDetails = {
       method: 'upi',
-      upiId: upiId,
+      merchantUpiId: MERCHANT_UPI_ID,
+      reference: upiReference,
       status: 'pending'
     };
   } else if (paymentMethod === 'card') {
@@ -730,56 +674,24 @@ function placeOrder() {
     };
   }
   
-  // Add payment details to order
   currentOrder.payment = paymentDetails;
   currentOrder.userId = user.uid;
   currentOrder.userEmail = user.email || '';
   
-  // Save order to Firestore
+  showModal('paymentProcessingModal');
+  
   db.collection('orders').add(currentOrder)
     .then(docRef => {
-      // Clear cart
       localStorage.removeItem('cart');
       updateCartCount();
-      
-      // Show success modal
-      closeModal('paymentModal');
+      closeModal('paymentProcessingModal');
       document.getElementById('orderIdDisplay').textContent = docRef.id;
       showModal('orderSuccessModal');
     })
     .catch(error => {
       console.error("Error placing order:", error);
+      closeModal('paymentProcessingModal');
       alert("Failed to place order. Please try again.");
-    });
-}
-// Add this new function for COD orders
-function completeCODOrder() {
-  currentOrder.payment = {
-    method: 'cod',
-    status: 'pending' // or 'confirmed' based on your workflow
-  };
-  currentOrder.userId = auth.currentUser.uid;
-  currentOrder.userEmail = auth.currentUser.email || '';
-
-  // Show processing modal
-  showModal('paymentProcessingModal');
-
-  // Save COD order to Firestore
-  db.collection('orders').add(currentOrder)
-    .then(docRef => {
-      // Clear cart
-      localStorage.removeItem('cart');
-      updateCartCount();
-      
-      // Show success modal
-      closeModal('paymentProcessingModal');
-      document.getElementById('orderIdDisplay').textContent = docRef.id;
-      showModal('orderSuccessModal');
-    })
-    .catch(error => {
-      console.error("Error placing COD order:", error);
-      closeModal('paymentProcessingModal');
-      alert("Failed to place COD order. Please try again.");
     });
 }
 
@@ -789,13 +701,114 @@ function closeOrderSuccess() {
 
 // Authentication Functions
 function showLogin() {
+  // Clear previous inputs
+  document.getElementById('loginEmail').value = '';
+  document.getElementById('loginPassword').value = '';
   showModal('loginModal');
 }
 
 function closeLogin() {
   closeModal('loginModal');
-  document.getElementById('loginEmail').value = '';
-  document.getElementById('loginPassword').value = '';
+}
+
+function loginUser() {
+  const email = document.getElementById('loginEmail').value;
+  const password = document.getElementById('loginPassword').value;
+  
+  if (!email || !password) {
+    alert('Please enter both email and password');
+    return;
+  }
+
+  auth.signInWithEmailAndPassword(email, password)
+    .then((userCredential) => {
+      alert("Logged in successfully!");
+      closeLogin();
+      updateUserProfile(userCredential.user);
+    })
+    .catch(error => {
+      console.error('Login error:', error);
+      let errorMessage = "Login failed: ";
+      
+      // More user-friendly error messages
+      switch(error.code) {
+        case 'auth/invalid-email':
+          errorMessage += "Invalid email format";
+          break;
+        case 'auth/user-disabled':
+          errorMessage += "This account has been disabled";
+          break;
+        case 'auth/user-not-found':
+          errorMessage += "No account found with this email";
+          break;
+        case 'auth/wrong-password':
+          errorMessage += "Incorrect password";
+          break;
+        default:
+          errorMessage += error.message;
+      }
+      
+      alert(errorMessage);
+    });
+}
+
+function signupUser() {
+  const email = document.getElementById('loginEmail').value;
+  const password = document.getElementById('loginPassword').value;
+  
+  if (!email || !password) {
+    alert('Please enter both email and password');
+    return;
+  }
+
+  if (password.length < 6) {
+    alert('Password should be at least 6 characters');
+    return;
+  }
+
+  auth.createUserWithEmailAndPassword(email, password)
+    .then((userCredential) => {
+      alert("Account created successfully!");
+      closeLogin();
+      updateUserProfile(userCredential.user);
+    })
+    .catch(error => {
+      console.error('Signup error:', error);
+      let errorMessage = "Signup failed: ";
+      
+      switch(error.code) {
+        case 'auth/email-already-in-use':
+          errorMessage += "Email already in use";
+          break;
+        case 'auth/invalid-email':
+          errorMessage += "Invalid email format";
+          break;
+        case 'auth/weak-password':
+          errorMessage += "Password is too weak";
+          break;
+        default:
+          errorMessage += error.message;
+      }
+      
+      alert(errorMessage);
+    });
+}
+
+function resetPassword() {
+  const email = document.getElementById('loginEmail').value;
+  if (!email) {
+    alert("Please enter your email first");
+    return;
+  }
+  
+  auth.sendPasswordResetEmail(email)
+    .then(() => {
+      alert("Password reset email sent. Please check your inbox.");
+    })
+    .catch(error => {
+      console.error("Password reset error:", error);
+      alert("Failed to send reset email: " + error.message);
+    });
 }
 
 function googleLogin() {
@@ -827,45 +840,6 @@ function googleLogin() {
       } else {
         alert("Google login failed: " + error.message);
       }
-    });
-}
-function loginUser() {
-  const email = document.getElementById('loginEmail').value;
-  const password = document.getElementById('loginPassword').value;
-  
-  if (!email || !password) {
-    alert('Please enter both email and password');
-    return;
-  }
-
-  auth.signInWithEmailAndPassword(email, password)
-    .then(() => {
-      alert("Logged in successfully!");
-      closeLogin();
-    })
-    .catch(error => {
-      console.error('Login error:', error);
-      alert("Login failed: " + error.message);
-    });
-}
-
-function signupUser() {
-  const email = document.getElementById('loginEmail').value;
-  const password = document.getElementById('loginPassword').value;
-  
-  if (!email || !password) {
-    alert('Please enter both email and password');
-    return;
-  }
-
-  auth.createUserWithEmailAndPassword(email, password)
-    .then(() => {
-      alert("Account created successfully!");
-      closeLogin();
-    })
-    .catch(error => {
-      console.error('Signup error:', error);
-      alert("Signup failed: " + error.message);
     });
 }
 
@@ -931,7 +905,6 @@ function logout() {
 
 // Modal Functions
 function showModal(modalId) {
-  // Hide all other modals first
   document.querySelectorAll('[id$="Modal"]').forEach(modal => {
     if (modal.id !== modalId) {
       modal.style.display = 'none';
@@ -945,7 +918,6 @@ function showModal(modalId) {
 function closeModal(modalId) {
   document.getElementById(modalId).style.display = 'none';
   
-  // Check if any other modals are open
   const anyModalOpen = Array.from(document.querySelectorAll('[id$="Modal"]'))
     .some(modal => modal.style.display === 'block');
   
@@ -968,7 +940,7 @@ auth.onAuthStateChanged(user => {
   const userEmail = document.getElementById('userEmail');
   
   if (user) {
-    userEmail.textContent = user.email || 'Logged In'; // Removed phoneNumber
+    userEmail.textContent = user.email || 'Logged In';
     loginBtn.style.display = 'none';
     profileBtn.style.display = 'inline-block';
     loadProfile();
@@ -981,7 +953,6 @@ auth.onAuthStateChanged(user => {
   updateCartCount();
 });
 
-// Close modals when clicking outside
 document.addEventListener('click', (e) => {
   if (e.target.id === 'modalBackdrop') {
     closeAllModals();
